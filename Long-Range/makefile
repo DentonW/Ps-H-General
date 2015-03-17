@@ -1,7 +1,7 @@
 FC = mpicc
 #FFLAGS = -I/usr/include/i386-linux-gnu -I/opt/intel/mkl/include -openmp -O3 -xHost
 #FFLAGS = -I/usr/include/i386-linux-gnu -I/opt/intel/mkl/include -openmp -cc=icpc -g -check-pointers=rw
-FFLAGS = -I/usr/include/i386-linux-gnu -I/opt/intel/mkl/include -openmp -cc=icpc
+FFLAGS = -I/usr/include/i386-linux-gnu -I/opt/intel/mkl/include -openmp #-cc=icpc
 #LDLIBS = -lmkl_core -lmkl_lapack95 -lmkl_sequential -lm -lmkl_intel -lmkl_blas95 
 LDLIBS = -lmkl_intel_thread -lmkl_lapack95_lp64 -lmkl_core -lmkl_intel_lp64 -lmkl_sequential -lgsl -lgslcblas -lstdc++
 OBJS = Ps-H\ Scattering.o Short-Range.o Long-Range.o Phase\ Shift.o Gaussian\ Integration.o Vector\ Gaussian\ Integration.o
