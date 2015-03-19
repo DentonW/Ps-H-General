@@ -678,6 +678,16 @@ int ReadMatrixElem(ifstream &FileMatrixElem, int NumShortTerms, vector <double> 
 		IsTriplet = 1;
 		NumSets = 1;
 	}
+	else if (LString == "I-Wave Singlet Ps-H") {
+		LValue = 6;
+		IsTriplet = 0;
+		NumSets = 1;
+	}
+	else if (LString == "I-Wave Triplet Ps-H") {
+		LValue = 6;
+		IsTriplet = 1;
+		NumSets = 1;
+	}
 	else {
 		cout << "Problem string in matrix element file has an unknown value...exiting." << endl;
 		return -1;
