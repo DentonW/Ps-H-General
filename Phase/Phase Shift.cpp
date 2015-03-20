@@ -15,14 +15,18 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <boost/filesystem.hpp>
+#include <tinyxml2.h>
+#include <algorithm>
 
 using namespace std;
+using namespace tinyxml2;
 
 typedef complex<double> dcmplx;
 
 int		CalcPowerTableSize(int Omega);
 int		ReadMatrixElem(ifstream &FileMatrixElem, int NumShortTerms, vector <double> &ARow, vector <double> &B, double &SLS, int &IsTriplet, int &Ordering, int &LValue, int &Formalism, int &Omega, int &NumSets, double &Alpha1, double &Beta1, double &Gamma1, double &Alpha2, double &Beta2, double &Gamma2, double &Kappa, double &Mu, string &LString, int &Shielding, string &Lambda, double &Epsilon12, double &Epsilon13, bool &ExtraExponential);
-int		ReadShortHeader(ifstream &FileShortRange, int &Omega, int &LValue, int &IsTriplet, int &Formalism, int &Ordering, int &NumShortTerms, int &NumSets, int &Integration, double &Alpha1, double &Beta1, double &Gamma1, double &Alpha2, double &Beta2, double &Gamma2, bool &ExtraExponential, double &Epsilon12, double &Epsilon13, vector <int> &ExpLen);
+int		ReadShortHeader(string &FileShort, string &ShortString, string &LString, int &Omega, int &LValue, int &IsTriplet, int &Formalism, int &Ordering, int &NumShortTerms, int &NumSets, int &Integration, double &Alpha1, double &Beta1, double &Gamma1, double &Alpha2, double &Beta2, double &Gamma2, bool &ExtraExponential, double &Epsilon12, double &Epsilon13, vector <int> &ExpLen);
+int		ParseShortData(string &Data, vector <double> &ShortTerms, int NumShortTerms, double Kappa);
 void	WriteHeader(ofstream &OutFile, string &LString, int &LValue, char *FileShortName, char *FileMatrixElemName, char *EnergyFileName, bool &Paired, bool &Resorted,
 				int &ShortInt, int &NumTerms, double &Kappa, double &Mu, int &Shielding, string &Lambda, double &Alpha, double &Beta, double &Gamma, string &ProgName);
 int		CreateSubset(vector <double> &ARow, vector <double> &B, vector <double> &ShortTerms, vector <double> &ARowSub, vector <double> &BSub, vector <double> &ShortTermsSub, int NumShortTerms, int NSub);
@@ -89,9 +93,9 @@ std::string trim(const std::string& str,
 
 int main(int argc, char *argv[])
 {
-	ifstream FileMatrixElem, FileShortRange;
+	ifstream FileMatrixElem;
 	ofstream OutFile;
-	string LString, Lambda;
+	string ShortDataString, LStringShort, LStringLong, Lambda;
 	double ShortAlpha1, ShortBeta1, ShortGamma1, ShortAlpha2, ShortBeta2, ShortGamma2, ShortEpsilon12, ShortEpsilon13, Kappa, Mu;
 	double LongAlpha1, LongBeta1, LongGamma1, LongAlpha2, LongBeta2, LongGamma2, LongEpsilon12, LongEpsilon13;
 	int ShortOmega, ShortLValue, ShortIsTriplet, ShortOrdering, /*ShortNumSets,*/ ShortFormalism;
@@ -102,7 +106,6 @@ int main(int argc, char *argv[])
 	int TotalTerms;
 
 	vector <double> ARow, B, ShortTerms;
-	double *PhiPhi, *PhiHPhi;
 	double SLS;
 	vector <double> ARowSub, BSub, ShortTermsSub;
 	double GenKohnPhase;
@@ -148,12 +151,6 @@ int main(int argc, char *argv[])
 		return 2;
 	}
 
-	FileShortRange.open(FileShortName, ios::in | ios::binary);
-	if (FileShortRange.fail()) {
-		cerr << "Unable to open file " << FileShortName << " for reading." << endl;
-		return 3;
-	}
-
 	OutFile.open(OutFileName);
 	if (!OutFile.is_open()) {
 		cout << "Could not open output file...exiting." << endl;
@@ -187,7 +184,7 @@ int main(int argc, char *argv[])
 	cout << setprecision(18);
 	OutFile << setprecision(18);
 
-	int err = ReadShortHeader(FileShortRange, ShortOmega, ShortLValue, ShortIsTriplet, ShortFormalism, ShortOrdering, NumShortTermsFile, NumSets, ShortInt, ShortAlpha1, ShortBeta1, ShortGamma1, ShortAlpha2, ShortBeta2, ShortGamma2, ExtraExponential, ShortEpsilon12, ShortEpsilon13, ExpLen);
+	int err = ReadShortHeader(string(FileShortName), ShortDataString, LStringShort, ShortOmega, ShortLValue, ShortIsTriplet, ShortFormalism, ShortOrdering, NumShortTermsFile, NumSets, ShortInt, ShortAlpha1, ShortBeta1, ShortGamma1, ShortAlpha2, ShortBeta2, ShortGamma2, ExtraExponential, ShortEpsilon12, ShortEpsilon13, ExpLen);
 	if (err == -1) {
 		return 8;
 	}
@@ -199,48 +196,27 @@ int main(int argc, char *argv[])
 		//return 2;
 	}
 
-	// The P-wave files have double the number of elements.
-	//NumShortTerms = NumShortTerms*(ShortLValue+1);
-
 	if (ShortLValue == 0)
 		NumShortTotal = NumShort;  // The S-wave only has one symmetry
 	else
 		NumShortTotal = NumShort * 2;
 
-	// Allocate PhiPhi and PhiHPhi matrices
-	PhiPhi = new double[NumShortTotal*NumShortTotal];
-	PhiHPhi = new double[NumShortTotal*NumShortTotal];
-	if (PhiPhi == NULL || PhiHPhi == NULL) {
-		cout << "Memory allocation error" << endl;
-		return 5;
-	}
-
-	// Read in the <phi|phi> and <phi|H|phi> matrix elements.
-	FileShortRange.read((char*)PhiPhi, NumShortTotal*NumShortTotal*sizeof(double));
-	FileShortRange.read((char*)PhiHPhi, NumShortTotal*NumShortTotal*sizeof(double));
-
 	ARow.resize(NumShortTotal+1);
 	B.resize(NumShortTotal+1);
 	ShortTerms.resize(NumShortTotal*NumShortTotal);
-	err = ReadMatrixElem(FileMatrixElem, NumShortTotal, ARow, B, SLS, LongIsTriplet, LongOrdering, LongLValue, LongFormalism, LongOmega, LongNumSets, LongAlpha1, LongBeta1, LongGamma1, LongAlpha2, LongBeta2, LongGamma2, Kappa, Mu, LString, Shielding, Lambda, LongEpsilon12, LongEpsilon13, ExtraExponential);
+	err = ReadMatrixElem(FileMatrixElem, NumShortTotal, ARow, B, SLS, LongIsTriplet, LongOrdering, LongLValue, LongFormalism, LongOmega, LongNumSets, LongAlpha1, LongBeta1, LongGamma1, LongAlpha2, LongBeta2, LongGamma2, Kappa, Mu, LStringLong, Shielding, Lambda, LongEpsilon12, LongEpsilon13, ExtraExponential);
 	if (err == -1)
 		return 6;
 
 	// Compare the short-range and long-range files to make sure they are describing the same problem.
-	if ((LongLValue != ShortLValue && ShortLValue != 0) || LongIsTriplet != ShortIsTriplet || LongOrdering != ShortOrdering || LongOmega != ShortOmega || LongAlpha1 != ShortAlpha1 || LongBeta1 != ShortBeta1 || LongGamma1 != ShortGamma1 || LongAlpha2 != ShortAlpha2 || LongBeta2 != ShortBeta2 || LongGamma2 != ShortGamma2) {
+	if ((LongLValue != ShortLValue) || LongIsTriplet != ShortIsTriplet || LongOrdering != ShortOrdering || LongOmega != ShortOmega || LongAlpha1 != ShortAlpha1 || LongBeta1 != ShortBeta1 || LongGamma1 != ShortGamma1 || LongAlpha2 != ShortAlpha2 || LongBeta2 != ShortBeta2 || LongGamma2 != ShortGamma2) {
 		cout << "Short-range and long-range files describe different problems...exiting." << endl;
 		return 8;
 	}
 
-	for (int i = 0; i < NumShortTotal*NumShortTotal; i++) {
-		ShortTerms[i] = PhiHPhi[i] - 0.5*Kappa*Kappa * PhiPhi[i] + 1.5*PhiPhi[i];
-		//ShortTerms[i] = PhiHPhi[i] - Kappa*Kappa * PhiPhi[i] + 1.5*PhiPhi[i];  // For electron or positron scattering
-	}
+	ParseShortData(ShortDataString, ShortTerms, NumShortTotal, Kappa);
 
-	delete [] PhiPhi;
-	delete [] PhiHPhi;
-
-	WriteHeader(OutFile, LString, ShortLValue, FileShortName, FileMatrixElemName, EnergyFileName, Paired, Resorted,
+	WriteHeader(OutFile, LStringLong, ShortLValue, FileShortName, FileMatrixElemName, EnergyFileName, Paired, Resorted,
 				ShortInt, TotalTerms, Kappa, Mu, Shielding, Lambda, ShortAlpha1, ShortBeta1, ShortGamma1, ProgName);
 
 	int FieldWidth = 25;
@@ -304,7 +280,6 @@ int main(int argc, char *argv[])
 	OutFile << "</data>" << endl << "</psh_data>" << endl;
 
 	FileMatrixElem.close();
-	FileShortRange.close();
 	OutFile.close();
 
 	return 0;
@@ -469,7 +444,7 @@ int LoadToddTerms(int ShortLValue, vector <double> &ARow, vector <double> &B, ve
 		UsedTermsSub.resize(NSub*2);
 	
 		if (Resorted) {
-			//cout << "Reordering terms" << endl;
+			cout << "Reordering terms" << endl;
 			sort(UsedTerms.begin(), UsedTerms.end(), myobject);
 		}
 
@@ -773,95 +748,162 @@ int ReadMatrixElem(ifstream &FileMatrixElem, int NumShortTerms, vector <double> 
 }
 
 
-// Reads in the short-range file header
-int ReadShortHeader(ifstream &FileShortRange, int &Omega, int &LValue, int &IsTriplet, int &Formalism, int &Ordering, int &NumShortTerms, int &NumSets, int &Integration, double &Alpha1, double &Beta1, double &Gamma1, double &Alpha2, double &Beta2, double &Gamma2, bool &ExtraExponential, double &Epsilon12, double &Epsilon13, vector <int> &ExpLen)
+#ifndef XMLCheckResult
+	#define XMLCheckResult(a_eResult) if (a_eResult != XML_SUCCESS) { cout << "Error parsing short-range file." << endl; return -1; }
+#endif
+
+#ifndef XMLGetElem
+	#define XMLGetElem(Element, Head, Str) { Element = Head->FirstChildElement(Str);  if (Element == NULL) { cout << "Could not parse the " << Str << " element in short-range file." << endl; return -1; } }
+#endif
+
+#ifndef XMLCheckResult2
+	#define XMLCheckResult2(Element) 	if (Element == NULL) {	cout << "Could not parse element in short-range file." << endl; return -1;	}
+#endif
+
+// Reads in the short-range file
+//  @TODO: Multiple formalisms (formalism tag), sectors, full exponential support
+int ReadShortHeader(string &FileShort, string &ShortString, string &LString, int &Omega, int &LValue, int &IsTriplet, int &Formalism, int &Ordering, int &NumShortTerms, int &NumSets, int &Integration, double &Alpha1, double &Beta1, double &Gamma1, double &Alpha2, double &Beta2, double &Gamma2, bool &ExtraExponential, double &Epsilon12, double &Epsilon13, vector <int> &ExpLen)
 {
-	int MagicNum, Version, HeaderLen, DataFormat, NumShortTerms1, NumShortTerms2;
-	int VarLen;
+	XMLDocument doc;
+	XMLError eResult;
+	XMLElement *Element;
+	string Entry;
 
-	FileShortRange.read((char*)&MagicNum, 4);
-	FileShortRange.read((char*)&Version, 4);
-	FileShortRange.read((char*)&HeaderLen, 4);
-	FileShortRange.read((char*)&DataFormat, 4);
-	FileShortRange.read((char*)&Omega, 4);
-	FileShortRange.read((char*)&NumShortTerms1, 4);
-	FileShortRange.read((char*)&NumShortTerms2, 4);
-	FileShortRange.read((char*)&LValue, 4);
-	FileShortRange.read((char*)&Formalism, 4);
-	FileShortRange.read((char*)&IsTriplet, 4);
-	FileShortRange.read((char*)&Ordering, 4);
-	FileShortRange.read((char*)&Integration, 4);
-	FileShortRange.read((char*)&NumSets, 4);
+	eResult = doc.LoadFile(FileShort.c_str());
+	XMLCheckResult(eResult);
+	XMLElement *titleElement = doc.FirstChildElement("psh_data");
+	XMLCheckResult2(titleElement);
 
-	//@TODO: More descriptive errors for each
+	XMLElement *HeaderElement = titleElement->FirstChildElement("header");
+	XMLCheckResult2(HeaderElement);
 
-	if (MagicNum != 0x31487350) {  // "PsH1" in hexadecimal (with reverse due to endianness)
-		cout << "This is not a valid Ps-H file (MagicNum)...exiting." << endl;
+	XMLGetElem(Element, HeaderElement, "problem");
+	LString = Element->GetText();
+
+	XMLGetElem(Element, HeaderElement, "ordering");
+	Entry = Element->GetText();
+	if (Entry == "Denton")
+		Ordering = 0;
+	else if (Entry == "Peter")
+		Ordering = 1;
+	else {
+		cout << "Ordering in short-range file has an invalid value...exiting." << endl;
 		return -1;
 	}
 
-	if (Version < 1 || Version > 9) {
-		cout << "This is not a valid Ps-H file (Version)...exiting." << endl;
-		cout << Version << endl;
-		return -1;
+	XMLGetElem(Element, HeaderElement, "shortint");
+	Entry = Element->GetText();
+	if (Entry == "Direct summation")
+		Integration = 0;
+	else if (Entry == "Asymptotic Expansion")
+		Integration = 1;
+	else if (Entry == "Recursion Relations")
+		Integration = 2;
+	else {
+		cout << "Integration identifier in short-range file has an invalid value...exiting." << endl;
 	}
 
-	if (HeaderLen != 80 && HeaderLen != 104) {
-		cout << "This is not a valid Ps-H file (HeaderLen)...exiting." << endl;
-		return -1;
+	//@TODO: Create macro for reading in an integer
+	XMLGetElem(Element, HeaderElement, "lvalue");
+	eResult = Element->QueryIntText(&LValue);
+	XMLCheckResult(eResult);
+
+	XMLGetElem(Element, HeaderElement, "spin");
+	Entry = Element->GetText();
+	if (Entry == "Singlet")
+		IsTriplet = 0;
+	else if (Entry == "Triplet")
+		IsTriplet = 1;
+
+	XMLGetElem(Element, HeaderElement, "omega");
+	eResult = Element->QueryIntText(&Omega);
+	XMLCheckResult(eResult);
+
+	XMLGetElem(Element, HeaderElement, "numterms");
+	eResult = Element->QueryIntText(&NumShortTerms);
+	XMLCheckResult(eResult);
+
+	XMLGetElem(Element, HeaderElement, "numsets");
+	eResult = Element->QueryIntText(&NumSets);
+	XMLCheckResult(eResult);
+	
+	if (NumSets > 1) {
+		//@TODO: May want to use NextSibling to read these in
+		cout << "This does not read in the extra sets of nonlinear parameters yet." << endl;
 	}
 
-	if (DataFormat != 8) {
-		cout << "This is not a valid Ps-H file (Dataformat)...exiting." << endl;
-		return -1;
-	}
+	XMLElement *NonlinearElement = HeaderElement->FirstChildElement("nonlinear");
+	XMLCheckResult2(NonlinearElement);
 
-	if ((Formalism != 1 && Formalism != 2) || (IsTriplet != 0 && IsTriplet != 1) || (Ordering != 0 && Ordering != 1)) {
-		cout << "This is not a valid Ps-H file (Formalism/IsTriplet/Ordering)...exiting." << endl;
-		return -1;
-	}
+	XMLGetElem(Element, NonlinearElement, "alpha");
+	eResult = Element->QueryDoubleText(&Alpha1);
+	XMLCheckResult(eResult);
 
-	if (NumSets != 1 && NumSets != 2) {
-		cout << "This is not a valid Ps-H file (NumSets)...exiting." << endl;
-		return -1;
-	}
+	XMLGetElem(Element, NonlinearElement, "beta");
+	eResult = Element->QueryDoubleText(&Beta1);
+	XMLCheckResult(eResult);
 
-	/*if (NumShortTerms1 != NumShortTerms2) {
-		cout << "This is not a valid Ps-H file...exiting." << endl;  // Cannot handle two different values for this yet.
-		return -1;
-	}*/
-	NumShortTerms = NumShortTerms1;
+	XMLGetElem(Element, NonlinearElement, "gamma");
+	eResult = Element->QueryDoubleText(&Gamma1);
+	XMLCheckResult(eResult);
 
-	// @TODO: Set up to work properly with sectors
-	FileShortRange.read((char*)&Alpha1, 8);
-	FileShortRange.read((char*)&Beta1, 8);
-	FileShortRange.read((char*)&Gamma1, 8);
+	XMLElement *ExpElement = HeaderElement->FirstChildElement("extraexp");
 	ExtraExponential = false;
-	if (Version == 9) {  // Extra exponentials
-		double BlankDouble;
-		int BlankInt;
+	if (ExpElement != NULL) {  // Does not exist in files that have the extra exponentials
+		//@TODO: Allow reading these values in
 		ExtraExponential = true;
-		FileShortRange.read((char*)&Epsilon12, 8);
-		FileShortRange.read((char*)&Epsilon13, 8);
-		FileShortRange.read((char*)&BlankDouble, 8);  // To be reserved for Epsilon23 at some point in the future
-
-		ExpLen.resize(2);  // No r23 exponential right now
-		FileShortRange.read((char*)&ExpLen[0], 4);
-		FileShortRange.read((char*)&ExpLen[1], 4);
-		FileShortRange.read((char*)&BlankInt, 4);
-	}
-	if (NumSets == 2) {
-		//read (FileShortRange) Alpha2, Beta2, Gamma2
-		FileShortRange.read((char*)&Alpha2, 8);
-		FileShortRange.read((char*)&Beta2, 8);
-		FileShortRange.read((char*)&Gamma2, 8);
+		cout << "This does not read in the extra exponential parameter data yet." << endl;
 	}
 
-	FileShortRange.read((char*)&VarLen, 4);
+	XMLElement *DataElement = titleElement->FirstChildElement("data");
+	XMLCheckResult2(DataElement);
+	const char *DataChar = DataElement->GetText();
+	ShortString = string(DataChar);
 
 	return 0;
 }
 
+
+int ParseShortData(string &Data, vector <double> &ShortTerms, int NumShortTerms, double Kappa)
+{
+	double *PhiPhi, *PhiHPhi;
+
+	// Allocate PhiPhi and PhiHPhi matrices
+	PhiPhi = new double[NumShortTerms*NumShortTerms];
+	PhiHPhi = new double[NumShortTerms*NumShortTerms];
+	if (PhiPhi == NULL || PhiHPhi == NULL) {
+		cout << "Memory allocation error" << endl;
+		return 5;
+	}
+
+	replace(Data.begin(), Data.end(), 'D', 'E');  // Fortran uses D isntead of E for scientific notation
+
+	stringstream DataStream(Data);
+	string test;
+	int iC, jC;
+	double PhiPhiElem, PhiHPhiElem;
+	for (int i = 0; i < NumShortTerms; i++) {
+		for (int j = 0; j < NumShortTerms; j++) {
+			DataStream >> iC >> jC >> PhiPhiElem >> PhiHPhiElem;
+			//cout << iC << " " << jC << " " << PhiPhiElem << " " << PhiHPhiElem << endl;
+			int Idx = i * NumShortTerms + j;
+			PhiPhi[Idx] = PhiPhiElem;
+			PhiHPhi[Idx] = PhiHPhiElem;
+		}
+	}
+
+	ShortTerms.resize(NumShortTerms*NumShortTerms);
+
+	for (int i = 0; i < NumShortTerms*NumShortTerms; i++) {
+		ShortTerms[i] = PhiHPhi[i] - 0.5*Kappa*Kappa * PhiPhi[i] + 1.5*PhiPhi[i];
+		//ShortTerms[i] = PhiHPhi[i] - Kappa*Kappa * PhiPhi[i] + 1.5*PhiPhi[i];  // For electron or positron scattering
+	}
+
+	delete [] PhiPhi;
+	delete [] PhiHPhi;
+
+	return 0;
+}
 
 void WriteHeader(ofstream &OutFile, string &LString, int &LValue, char *FileShortName, char *FileMatrixElemName, char *EnergyFileName, bool &Paired, bool &Resorted,
 				int &ShortInt, int &NumTerms, double &Kappa, double &Mu, int &Shielding, string &Lambda, double &Alpha, double &Beta, double &Gamma, string &ProgName)
