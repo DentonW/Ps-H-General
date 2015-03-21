@@ -86,7 +86,7 @@ program PsHMain
 	if (Optimize == 1) write (iwrite,*) 'Optimizing eigenvalue', EigenNum
 
 	NumTerms = CalcPowerTableSize(Omega) * 2  ! First and second symmetries
-	call WriteHeader(iwrite, LValue, IsTriplet, Ordering, Method, EigenRoutine, Omega, NumTerms, Alpha, Beta, Gamma, M12max, M23max, M31max, pmax)
+	call WriteHeader(iwrite, Optimize, EigenNum, LValue, IsTriplet, Ordering, Method, EigenRoutine, Omega, NumTerms, Alpha, Beta, Gamma, M12max, M23max, M31max, pmax)
 	
 	Tol = 1e-3
 	Err = 1  ! Just has to be larger than tol.
@@ -128,83 +128,77 @@ program PsHMain
         NumTerms = NumTerms / 2
     end if
 	
-	do i = 1, NumTerms, 1
-		!do j = 1, i, 1  ! Use this instead if only the lower triangle is required.
-		do j = 1, NumTerms, 1
-			write (iwrite,"(i6,i6,d28.20,d28.20)") i, j, PhiPhi(i,j), Phi2HPhi(i,j)
-		enddo
-	enddo
+	call WriteData(iwrite, NumTerms, PhiPhi, Phi2HPhi)
 	
 	! Divide every entry in Phi2HPhi by 2, since we calculated <phi_i|2H|phi_j> in equation (3.22).
 	Phi2HPhi = Phi2HPhi / 2.0_16
-
-	write (iwrite,*)
-	write (iwrite,*) 'Energies:'
 	
-	if (AllEnergies == 0) then
-		StartEnergy = NumTerms
-	else
-		StartEnergy = 1
-	end if
+	call CalcEigenvalues(iwrite, LValue, NumTerms, AllEnergies, PhiPhi, Phi2HPhi, LowerEigen, UpperEigen)
 
-    if (LValue == 0) then
-        NumTerms = NumTerms * 2
-	end if
-
-	do j = StartEnergy, NumTerms, 1
-	!do j = 1, 1, 1
-	    if (LValue == 0 .and. j > NumTerms / 2) then  ! S-wave only has one symmetry
-            exit
-        end if
-
-		! Copies our real*16 matrices to real*8 matrices so that LAPACK can operate on them.
-		Phi2HPhi8 = Phi2HPhi
-		PhiPhi8 = PhiPhi
-
-		! This calculates the energy eigenvalues of the generalized eigenvalue problem generated from
-		!  the Rayleigh-Ritz variational method:
-		!  det(<phi_i|H|phi_j> - E <phi_i|phi_j>) = 0
-		! We calculated the lower and upper triangles of the PhiPhi and Phi2HPhi matrices above, though
-		!  they are symmetric.  LAPACK does not require us to fill in both halves; we can just
-		!  specify 'L' in the third parameter to denote that the lower triangle (and diagonal) is filled.
-		! Explanation of choices for the parameters are found at the Netlib site:
-		!  http://www.netlib.org/lapack/double/dsygv.f
-		call dsygv(1, 'N', 'L', j, Phi2HPhi8, NumTerms, PhiPhi8, NumTerms, Energies, Workspace, 3*NumTerms-1, Info)
-		!call Newdsygv(1, 'N', 'L', j, Phi2HPhi, NumTerms, PhiPhi, NumTerms, Energies, Workspace, 3*NumTerms-1, Info)
-		!call nag_sym_gen_eig_all('L', Phi2HPhi8, PhiPhi8, Energies)  ! NAG equivalent
-		if (Info /= 0) then
-			write (*,*)
-			write (*,*) 'Energy eigenvalues could not be determined!'
-			write (*,*) 'dsygv error code:', Info
-			write (iwrite,*)
-			write (iwrite,*) 'Energy eigenvalues could not be determined!'
-			write (iwrite,*) 'dsygv error code:', Info
-			exit  ! Exit the loop, because every successive j will give the same error, since we have a troublesome term.
-		elseif (Info == 0) then  ! dsygv successfully completed.
-			! Writes the eigenvalues.
-			! This output is formatted properly for inclusion into Excel as a comma-separated value (.csv) file.
-			write (iwrite,"(i4)",advance='no') j
-			do i = LowerEigen, UpperEigen, 1
-				write (iwrite,"(a,d21.14)",advance='no') ', ', Energies(i)
-			enddo
-			write (iwrite,*) ' '  ! Finish the line
-
-			write (*,"(i4)",advance='no') j
-			do i = LowerEigen, UpperEigen, 1
-				write (*,"(a,d21.14)",advance='no') ', ', Energies(i)
-			enddo
-			write (*,*) ' '  ! Finish the line
-		endif
-	enddo
-
+	!if (AllEnergies == 0) then
+	!	StartEnergy = NumTerms
+	!else
+	!	StartEnergy = 1
+	!end if
+ !
+ !   if (LValue == 0) then
+ !       NumTerms = NumTerms * 2
+	!end if
+ !
+	!do j = StartEnergy, NumTerms, 1
+	!!do j = 1, 1, 1
+	!    if (LValue == 0 .and. j > NumTerms / 2) then  ! S-wave only has one symmetry
+ !           exit
+ !       end if
+ !
+	!	! Copies our real*16 matrices to real*8 matrices so that LAPACK can operate on them.
+	!	Phi2HPhi8 = Phi2HPhi
+	!	PhiPhi8 = PhiPhi
+ !
+	!	! This calculates the energy eigenvalues of the generalized eigenvalue problem generated from
+	!	!  the Rayleigh-Ritz variational method:
+	!	!  det(<phi_i|H|phi_j> - E <phi_i|phi_j>) = 0
+	!	! We calculated the lower and upper triangles of the PhiPhi and Phi2HPhi matrices above, though
+	!	!  they are symmetric.  LAPACK does not require us to fill in both halves; we can just
+	!	!  specify 'L' in the third parameter to denote that the lower triangle (and diagonal) is filled.
+	!	! Explanation of choices for the parameters are found at the Netlib site:
+	!	!  http://www.netlib.org/lapack/double/dsygv.f
+	!	call dsygv(1, 'N', 'L', j, Phi2HPhi8, NumTerms, PhiPhi8, NumTerms, Energies, Workspace, 3*NumTerms-1, Info)
+	!	!call Newdsygv(1, 'N', 'L', j, Phi2HPhi, NumTerms, PhiPhi, NumTerms, Energies, Workspace, 3*NumTerms-1, Info)
+	!	!call nag_sym_gen_eig_all('L', Phi2HPhi8, PhiPhi8, Energies)  ! NAG equivalent
+	!	if (Info /= 0) then
+	!		write (*,*)
+	!		write (*,*) 'Energy eigenvalues could not be determined!'
+	!		write (*,*) 'dsygv error code:', Info
+	!		write (iwrite,*)
+	!		write (iwrite,*) 'Energy eigenvalues could not be determined!'
+	!		write (iwrite,*) 'dsygv error code:', Info
+	!		exit  ! Exit the loop, because every successive j will give the same error, since we have a troublesome term.
+	!	elseif (Info == 0) then  ! dsygv successfully completed.
+	!		! Writes the eigenvalues.
+	!		! This output is formatted properly for inclusion into Excel as a comma-separated value (.csv) file.
+	!		write (iwrite,"(a,i4)",advance='no') '    ', j
+	!		do i = LowerEigen, UpperEigen, 1
+	!			write (iwrite,"(a,d21.14)",advance='no') ', ', Energies(i)
+	!		enddo
+	!		write (iwrite,*) ' '  ! Finish the line
+ !
+	!		write (*,"(i4)",advance='no') j
+	!		do i = LowerEigen, UpperEigen, 1
+	!			write (*,"(a,d21.14)",advance='no') ', ', Energies(i)
+	!		enddo
+	!		write (*,*) ' '  ! Finish the line
+	!	endif
+	!enddo
 
 	! Get the end time to find the duration of the program.
 	!call cpu_time(EndTime)
 200	EndTime = omp_get_wtime()
 	write (*,*) 'Time taken (s):', EndTime - StartTime
-    write (*,*) omp_get_wtime()
-	write (iwrite,*)
-	write (iwrite,*) 'Time taken (s):', EndTime - StartTime, '  (min):', (EndTime - StartTime) / 60.0
+	write (iwrite,'(a)') "<runtime>"
+	write (iwrite,*) '    (s):', EndTime - StartTime, '  (min):', (EndTime - StartTime) / 60.0
+	write (iwrite,'(a)') "</runtime>"
+	write (iwrite,'(a)') "</psh_data>"
 
 	! Clean up memory before exiting
 	deallocate(Workspace)
@@ -263,136 +257,265 @@ subroutine ReadParamFile(iread, Omega, LValue, Alpha, Beta, Gamma, M12max, M23ma
 	return
 end
 
-subroutine WriteHeader(iwrite, LValue, IsTriplet, Ordering, Method, EigenRoutine, Omega, NumTerms, Alpha, Beta, Gamma, M12max, M23max, M31max, pmax)
+subroutine WriteHeader(iwrite, Optimize, EigenNum, LValue, IsTriplet, Ordering, Method, EigenRoutine, Omega, NumTerms, Alpha, Beta, Gamma, M12max, M23max, M31max, pmax)
 	implicit none
-	integer iwrite, LValue, IsTriplet, Ordering, Method, EigenRoutine, Omega, NumTerms, M12max, M23max, M31max, pmax
+	integer iwrite, Optimize, EigenNum, LValue, IsTriplet, Ordering, Method, EigenRoutine, Omega, NumTerms, M12max, M23max, M31max, pmax
 	real*8 Alpha, Beta, Gamma
+	character (len=8) cdate
+	character (len=8) ctime
+	
+	if (Optimize == 1) write (iwrite,*) 'Optimizing eigenvalue - not a valid XML file!', EigenNum
+
+	write (iwrite,'(a)') '<?xml version="1.0" encoding="UTF-8"?>'
+	write (iwrite,'(a)') "<psh_data>"
+	write (iwrite,'(a)') "<header>"
 	
 	select case (LValue)
 		case (0)  ! S-Wave
 			if (IsTriplet == 0) then
 				write (*,*) "S-Wave Singlet Ps-H"
-				write (iwrite,*) "S-Wave Singlet Ps-H"
+				write (iwrite,'(a)') "    <problem>S-Wave Singlet Ps-H</problem>"
 			else
 				write (*,*) "S-Wave Triplet Ps-H"
-				write (iwrite,*) "S-Wave Triplet Ps-H"
+				write (iwrite,'(a)') "    <problem>S-Wave Triplet Ps-H</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>0</lvalue>"  !@TODO: Should just do this as a single line for all partial waves
 		case (1)
 			if (IsTriplet == 0) then
 				write (*,*) "P-Wave Singlet Ps-H: 1st formalism"
-				write (iwrite,*) "P-Wave Singlet Ps-H: 1st formalism"
+				write (iwrite,'(a)') "    <problem>P-Wave Singlet Ps-H: 1st formalism</problem>"
 			else
 				write (*,*) "P-Wave Triplet Ps-H: 1st formalism"
-				write (iwrite,*) "P-Wave Triplet Ps-H: 1st formalism"
+				write (iwrite,'(a)') "    <problem>P-Wave Triplet Ps-H: 1st formalism</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>1</lvalue>"
 		case (2)
 			if (IsTriplet == 0) then
 				write (*,*) "D-Wave Singlet Ps-H: 1st formalism"
-				write (iwrite,*) "D-Wave Singlet Ps-H: 1st formalism"
+				write (iwrite,'(a)') "    <problem>D-Wave Singlet Ps-H: 1st formalism</problem>"
 			else
 				write (*,*) "D-Wave Triplet Ps-H: 1st formalism"
-				write (iwrite,*) "D-Wave Triplet Ps-H: 1st formalism"
+				write (iwrite,'(a)') "    <problem>D-Wave Triplet Ps-H: 1st formalism</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>2</lvalue>"
 		case (3)  ! F-Wave
 			if (IsTriplet == 0) then
 				write (*,*) "F-Wave Singlet Ps-H"
-				write (iwrite,*) "F-Wave Singlet Ps-H"
+				write (iwrite,'(a)') "    <problem>F-Wave Singlet Ps-H</problem>"
 			else
 				write (*,*) "F-Wave Triplet Ps-H"
-				write (iwrite,*) "F-Wave Triplet Ps-H"
+				write (iwrite,'(a)') "    <problem>F-Wave Triplet Ps-H</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>3</lvalue>"
 		case (4)  ! G-Wave
 			if (IsTriplet == 0) then
 				write (*,*) "G-Wave Singlet Ps-H"
-				write (iwrite,*) "G-Wave Singlet Ps-H"
+				write (iwrite,'(a)') "    <problem>G-Wave Singlet Ps-H</problem>"
 			else
 				write (*,*) "G-Wave Triplet Ps-H"
-				write (iwrite,*) "G-Wave Triplet Ps-H"
+				write (iwrite,'(a)') "    <problem>G-Wave Triplet Ps-H</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>4</lvalue>"
 		case (5)  ! H-Wave
 			if (IsTriplet == 0) then
 				write (*,*) "H-Wave Singlet Ps-H"
-				write (iwrite,*) "H-Wave Singlet Ps-H"
+				write (iwrite,'(a)') "    <problem>H-Wave Singlet Ps-H</problem>"
 			else
 				write (*,*) "H-Wave Triplet Ps-H"
-				write (iwrite,*) "H-Wave Triplet Ps-H"
+				write (iwrite,'(a)') "    <problem>H-Wave Triplet Ps-H</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>5</lvalue>"
 		case (6)  ! I-Wave
 			if (IsTriplet == 0) then
 				write (*,*) "I-Wave Singlet Ps-H"
-				write (iwrite,*) "I-Wave Singlet Ps-H"
+				write (iwrite,'(a)') "    <problem>I-Wave Singlet Ps-H</problem>"
 			else
 				write (*,*) "I-Wave Triplet Ps-H"
-				write (iwrite,*) "I-Wave Triplet Ps-H"
+				write (iwrite,'(a)') "    <problem>I-Wave Triplet Ps-H</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>6</lvalue>"
 		case (7)  ! K-Wave
 			if (IsTriplet == 0) then
 				write (*,*) "K-Wave Singlet Ps-H"
-				write (iwrite,*) "K-Wave Singlet Ps-H"
+				write (iwrite,'(a)') "    <problem>K-Wave Singlet Ps-H</problem>"
 			else
 				write (*,*) "K-Wave Triplet Ps-H"
-				write (iwrite,*) "K-Wave Triplet Ps-H"
+				write (iwrite,'(a)') "    <problem>K-Wave Triplet Ps-H</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>7</lvalue>"
 		case (8)  ! L-Wave
 			if (IsTriplet == 0) then
 				write (*,*) "L-Wave Singlet Ps-H"
-				write (iwrite,*) "L-Wave Singlet Ps-H"
+				write (iwrite,'(a)') "    <problem>L-Wave Singlet Ps-H</problem>"
 			else
 				write (*,*) "L-Wave Triplet Ps-H"
-				write (iwrite,*) "L-Wave Triplet Ps-H"
+				write (iwrite,'(a)') "    <problem>L-Wave Triplet Ps-H</problem>"
 			endif
+			write (iwrite,'(a)') "    <lvalue>8</lvalue>"
 		case default
 			write (*,*) "Higher partial waves are not supported yet...exiting."
 			stop
-	end select
-
+		end select
+		
+	if (IsTriplet == 0) then
+		write (iwrite,'(a,i0,a)') "    <spin>Singlet</spin>"
+	else
+		write (iwrite,'(a,i0,a)') "    <spin>Triplet</spin>"
+	end if
+	
 	if (Ordering == 1) then
 		write (*,*) "Using Peter Van Reeth's ordering"
-		write (iwrite,*) "Using Peter Van Reeth's ordering"
+		write (iwrite,'(a)') "    <ordering>Peter</ordering>"
 	else
 		write (*,*) "Using my ordering"
-		write (iwrite,*) "Using my ordering"
+		write (iwrite,'(a)') "    <ordering>Denton</ordering>"
 	endif
-
+	
+	! This code only does the Laplacian 1st formalism.
+	write (iwrite,'(a)') "    <gradlapl>Laplacian</gradlapl>"
+	write (iwrite,'(a)') "    <formalism>1</formalism>"
+	
 	if (Method == 0) then
 		write (*,*) "Integration Technique: Direct Summation"
-		write (iwrite,*) "Integration Technique: Direct Summation"
+		write (iwrite,'(a)') "    <shortint>Direct summation</shortint>"
 	else if (Method == 1) then
 		write (*,*) "Integration Technique: Asymptotic Expansion"
-		write (iwrite,*) "Integration Technique: Asymptotic Expansion"
-	else if (Method == 2) then
-		write (*,*) "Integration Technique: Recursion Relations"
-		write (iwrite,*) "Integration Technique: Recursion Relations"
+		write (iwrite,'(a)') "    <shortint>Asymptotic Expansion</shortint>"
 	else
-		write (*,*) "Method parameter in input file must be 0, 1 or 2."
+		write (*,*) "Method parameter in input file must be 0 or 1."
 		stop
 	end if
 	
+	if (LValue == 0) NumTerms = NumTerms / 2  ! Only 1 set for the S-wave - temporarily change
+	write (*,*) 'Number of terms:', NumTerms
+	write (*,*) 'Omega =', Omega
+	write (iwrite,'(a,i0,a)') "    <omega>", Omega, "</omega>"
+	write (iwrite,'(a,i0,a)') "    <numterms>", NumTerms, "</numterms>"
+	write (iwrite,'(a)') "    <numsets>1</numsets>"  ! Can only have one set in this code
+	if (LValue == 0) NumTerms = NumTerms * 2
+	
+	write (iwrite,'(a)') "    <nonlinear>"
+	write (iwrite,'(a,f12.10,a)') "        <alpha>", Alpha, "</alpha>"
+	write (iwrite,'(a,f12.10,a)') "        <beta>", Beta, "</beta>"
+	write (iwrite,'(a,f12.10,a)') "        <gamma>", Gamma, "</gamma>"
+	write (iwrite,'(a)') "    </nonlinear>"
+
 	if (EigenRoutine == 1) then
 		write (*,*) "Eigenvalue routine: dsygv from LAPACK"
-		write (iwrite,*) "Eigenvalue routine: dsygv from LAPACK"
+		write (iwrite,'(a)') "    <eigenroutine>LAPACK</eigenroutine>"
 	else if (EigenRoutine == 2) then
 		write (*,*) "Eigenvalue routine: Pachucki eigenproblem solver"
-		write (iwrite,*) "Eigenvalue routine: Pachucki eigenproblem solver"
+		write (iwrite,'(a)') "    <eigenroutine>Pachucki</eigenroutine>"
 	else
 		write (*,*) "Eigenvalue routine parameter in input file must be 1 or 2."
 		stop
 	end if
+	
+	write (iwrite,'(a,i0,a)') "    <pmax>", pmax, "</pmax>"
+	write (iwrite,'(a,i0,a,i0,a,i0,a)') "    <Mmax>", M12max, " ", M23max, " ", M31max, "</Mmax>"
 
-	write (iwrite,*) 'Omega =', Omega
-	write (iwrite,*) 'Alpha =', Alpha
-	write (iwrite,*) 'Beta =', Beta
-	write (iwrite,*) 'Gamma =', Gamma
+	! Note that this is not Y2K compliant.
+	call date(cdate)
+	call time(ctime)
+	write (iwrite,'(5a)') "    <datetime>", cdate, " ", ctime, "</datetime>"
 
-	if (LValue == 0) NumTerms = NumTerms / 2
-	write (iwrite,*) 'Number of terms:', NumTerms	
-	write (*,*) 'Number of terms:', NumTerms
-	write (*,*) 'Omega =', Omega
-	if (LValue == 0) NumTerms = NumTerms * 2
+	write (iwrite,'(a)') "</header>"
 
-	write (iwrite,*) 'M12max, M23max, M31max, pmax =', M12max, M23max, M31max, pmax
-	write (iwrite,*)
+	return
+end
 
+
+! Outputs only the matrix elements (before division of Phi2HPhi by 2)
+subroutine WriteData(iwrite, NumTerms, PhiPhi, Phi2HPhi)
+	implicit none
+	integer iwrite, NumTerms, i, j
+	real*16, dimension(NumTerms,NumTerms) :: PhiPhi, Phi2HPhi
+
+	write (iwrite,'(a)') "<data>"
+	do i = 1, NumTerms, 1
+		!do j = 1, i, 1  ! Use this instead if only the lower triangle is required.
+		do j = 1, NumTerms, 1
+			write (iwrite,"(a,i7,i7,d38.30,d38.30)") '    ', i, j, PhiPhi(i,j), Phi2HPhi(i,j)
+		enddo
+	enddo
+	write (iwrite,'(a)') "</data>"
+	
+	return
+end
+
+
+! Solves the generalized eigenvalue problem and outputs results
+subroutine CalcEigenvalues(iwrite, LValue, NumTerms, AllEnergies, PhiPhi, Phi2HPhi, LowerEigen, UpperEigen)
+	implicit none
+	integer iwrite, LValue, NumTerms, AllEnergies, StartEnergy, LowerEigen, UpperEigen
+	real*16, dimension(NumTerms,NumTerms) :: PhiPhi, Phi2HPhi
+	real*8, allocatable, dimension(:,:) :: PhiPhi8, Phi2HPhi8
+	real*8, allocatable, dimension(:) :: Energies, Workspace
+	integer i, j, Info
+	
+	allocate(PhiPhi8(NumTerms,NumTerms))
+	allocate(Phi2HPhi8(NumTerms,NumTerms))
+	allocate(Energies(NumTerms))
+	allocate(Workspace(3*NumTerms-1))
+	
+	write (iwrite,'(a)') '<energies>'
+
+    if (LValue == 0) then
+        NumTerms = NumTerms * 2
+	end if	
+	
+	if (AllEnergies == 0) then
+		StartEnergy = NumTerms
+	else
+		StartEnergy = 1
+	end if
+
+	if (UpperEigen > NumTerms) UpperEigen = NumTerms
+
+	do j = StartEnergy, NumTerms, 1
+	!do j = 1, 1, 1
+		! Copies our real*16 matrices to real*8 matrices so that LAPACK can operate on them.
+		Phi2HPhi8 = Phi2HPhi
+		PhiPhi8 = PhiPhi
+
+		! This calculates the energy eigenvalues of the generalized eigenvalue problem generated from
+		!  the Rayleigh-Ritz variational method:
+		!  det(<phi_i|H|phi_j> - E <phi_i|phi_j>) = 0
+		! We calculated the lower and upper triangles of the PhiPhi and Phi2HPhi matrices above, though
+		!  they are symmetric.  LAPACK does not require us to fill in both halves; we can just
+		!  specify 'L' in the third parameter to denote that the lower triangle (and diagonal) is filled.
+		! Explanation of choices for the parameters are found at the Netlib site:
+		!  http://www.netlib.org/lapack/double/dsygv.f
+		call dsygv(1, 'N', 'L', j, Phi2HPhi8, NumTerms, PhiPhi8, NumTerms, Energies, Workspace, 3*NumTerms-1, Info)
+		!call Newdsygv(1, 'N', 'L', j, Phi2HPhi, NumTerms, PhiPhi, NumTerms, Energies, Workspace, 3*NumTerms-1, Info)
+		!call nag_sym_gen_eig_all('L', Phi2HPhi8, PhiPhi8, Energies)  ! NAG equivalent
+		if (Info /= 0) then
+			write (iwrite,*)
+			write (iwrite,*) 'Energy eigenvalues could not be determined!'
+			write (iwrite,*) 'dsygv error code:', Info
+			exit  ! Exit the loop, because every successive j will give the same error, since we have a troublesome term.
+		elseif (Info == 0) then  ! dsygv successfully completed.
+			! Writes the eigenvalues.
+			! This output is formatted properly for inclusion into Excel as a comma-separated value (.csv) file.
+			write (iwrite,"(a,i4)",advance='no') '    ', j
+			do i = LowerEigen, UpperEigen, 1
+				write (iwrite,"(a,d21.14)",advance='no') ', ', Energies(i)
+			enddo
+			write (iwrite,'(a)') ' '  ! Finish the line
+
+			write (*,"(i4)",advance='no') j
+			do i = LowerEigen, UpperEigen, 1
+				write (*,"(a,d21.14)",advance='no') ', ', Energies(i)
+			enddo
+			write (*,*) ' '  ! Finish the line
+		endif
+	enddo
+
+	write (iwrite,'(a)') '</energies>'
+
+	deallocate(PhiPhi8, Phi2HPhi8)
+	deallocate(Energies, Workspace)
+	
 	return
 end
 

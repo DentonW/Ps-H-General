@@ -9,7 +9,7 @@ Values of Alpha, Beta and Gamma:
 Integration method: (0 for Drake/Yan no asym, 1 for Drake/Yan asym)
 1
 Maximum value of M12, M23 and M31 to use for equations () and () of Drake and Yan's paper (M23 and M31 MUST be greater than M12):
-35 40 40
+20 20 20
 Maximum value of p to use for equation (8) of Drake and Yan's paper:
 150
 0 for Singlet or 1 for Triplet:
@@ -19,7 +19,7 @@ Eigenvalues to output (minimum and maximum):
 Show all energies? (0 for no, 1 for yes)
 1
 Optimize nonlinear parameters? (0 for no, 1 for yes)
-1
+0
 Eigenvalue to optimize (if above is 1):
 1
 Maximum iterations for optimization:
