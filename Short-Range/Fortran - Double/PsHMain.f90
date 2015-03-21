@@ -56,6 +56,8 @@ program PsHMain
 	!Tol = HylleraasIntegralGeneral(.true., .false., 1, 1, 1, -2, 1, 1, 2.7d0, 2.7d0, 2.7d0, 0, 0, 0, 0, 0, 0, &
 	!			0, 0, 0, 0, 0, 0, 15, 50, 15, 15, 0, 0, 0, WMatrix, 1)
 
+	write (*,*) "This code is currently incomplete. Use the quadruple version instead."
+	stop
 
 	iread = 9
 	iwrite = 10
