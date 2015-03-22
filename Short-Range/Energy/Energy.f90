@@ -14,6 +14,11 @@
 !@TODO: Get rid of *MatTemp?
 !@TODO: Do we need to broadcast Omega to all nodes?
 
+#ifndef NO_MPI
+#define USE_MPI
+#endif
+
+
 module variables
 	type PMatrix
 	   real*8, pointer, dimension(:,:) :: P
@@ -30,12 +35,16 @@ program Energy
 	!use mpi
 	use variables
 	implicit none
+#ifdef USE_MPI
 	include 'mpif.h'
+	integer MpiError, MpiStatus(MPI_STATUS_SIZE)
+	character(len=MPI_MAX_PROCESSOR_NAME) ProcessorName
+#endif
+	integer Node, TotalNodes, NodeStart, NodeEnd
 	integer outputtxt, energyfile, prevresults
 	integer i, j, k, m, i1, j1, ThreadNum, iargc, EnergyMinIndex, CurTerm, Omega, NumTerms, NumSets
 	integer Ordering, IsTriplet, Reserved
 	integer ProcNameLen, NumUsed, NumUnused, Info, Tid, MaxThreads
-	integer MpiError, TotalNodes, Node, NodeStart, NodeEnd, MpiStatus(MPI_STATUS_SIZE)
 	integer, allocatable, dimension(:) :: UsedTerms, UsedTerms2, UnusedTerms
 	integer, allocatable, dimension(:) :: EnergyMinIndexArray
 	real*8, allocatable, dimension(:,:) :: PhiPhi, PhiHPhi
@@ -48,7 +57,6 @@ program Energy
 	logical, allocatable, dimension(:) :: IsTermUsed
 	logical Error
 	character *100 Temp1, Temp2, Temp3, IOBuffer, EBuffer
-	character(len=MPI_MAX_PROCESSOR_NAME) ProcessorName
 	type(PMatrix), allocatable, dimension(:) :: PhiPhiMat, PhiHPhiMat
 	type(Ptr1D), allocatable, dimension(:) :: EnergiesArray, WorkspaceArray
 	integer CalcPowerTableSize
@@ -57,6 +65,9 @@ program Energy
 	integer*8 MemUsed, nt, mt
 	integer RemoveMeInt
 
+	Node = 0
+	TotalNodes = 1
+#ifdef USE_MPI
 	! All of the MPI initialization that is required
 	call MPI_Init(MpiError)
 	call MPI_Comm_size(MPI_COMM_WORLD, TotalNodes, MpiError)
@@ -69,6 +80,7 @@ program Energy
 		ThreadNum = omp_get_thread_num()
 		write (*,'(a,i3,a,i3,a,i3,a,i3,a,a)') 'Thread', ThreadNum, ' of', MaxThreads, ': Node', Node, ' of', TotalNodes, ': on ', ProcessorName
 	!$omp end parallel
+#endif
 	
 
 	! This tolerance may need to be changed.  This determines whether a term is problematic based on whether the
@@ -93,20 +105,20 @@ program Energy
 		if (iargc() == 2) then
 			call getarg(1, IOBuffer)
 			!open (outputtxt, FILE=IOBuffer)
-			open(unit=outputtxt, file=IOBuffer, status="old", access="stream")
+			open(unit=outputtxt, file=IOBuffer, status="old")
 			call getarg(2, IOBuffer)
 			open (energyfile, FILE=IOBuffer, status='unknown')
 		else if (iargc() == 3) then
 			call getarg(1, IOBuffer)
 			!open (outputtxt, FILE=IOBuffer)
-			open (unit=outputtxt, file=IOBuffer, status="old", access="stream")
+			open (unit=outputtxt, file=IOBuffer, status="old")
 			call getarg(2, IOBuffer)
 			open (energyfile, FILE=IOBuffer, status='unknown')
 			call getarg(3, IOBuffer)  ! Use previous output as an input to continue computation.
 			open (prevresults, FILE=IOBuffer)
 		else
 			!open (outputtxt, FILE='output.txt')
-			open (unit=outputtxt, file='output.psh', status="old", access="stream")
+			open (unit=outputtxt, file='output.psh', status="old")
 			open (energyfile, FILE='energies.txt', status='unknown')
 			IOBuffer = 'energies.txt'
 		endif
@@ -137,9 +149,11 @@ program Energy
 		write (energyfile,'(a,f11.8,a,f11.8,a,f11.8)') ' Alpha: ', Alpha(1), '  Beta: ', Beta(1), '  Gamma: ', Gamma(1)  !@TODO: Output all
 	endif  ! Only want to do this once, for the first process.
 
+#ifdef USE_MPI
 	! Send this to all processes so that they can properly allocate the matrices.
 	call MPI_BCAST(Omega, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
 	call MPI_BCAST(NumTerms, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
+#endif
 
 	allocate(PhiPhi(NumTerms*2,NumTerms*2))
 	allocate(PhiHPhi(NumTerms*2,NumTerms*2))
@@ -188,14 +202,8 @@ program Energy
 		write (*,*) "Reading in matrices..."
 		do i = 1, NumTerms*2, 1
 			do j = 1, NumTerms*2, 1
-				!read (outputtxt,*) i1, j1, PhiPhi(i,j), PhiHPhi(i,j)
-				read (outputtxt) PhiPhi(i,j)
-			enddo
-		enddo
-		do i = 1, NumTerms*2, 1
-			do j = 1, NumTerms*2, 1
-				!read (outputtxt,*) i1, j1, PhiPhi(i,j), PhiHPhi(i,j)
-				read (outputtxt) PhiHPhi(i,j)
+				read (outputtxt,*) i1, j1, PhiPhi(i,j), PhiHPhi(i,j)
+				!read (outputtxt) PhiPhi(i,j)
 			enddo
 		enddo
 
@@ -204,6 +212,7 @@ program Energy
 		write (*,*) "Finished reading in matrices."
 	endif
 	
+#ifdef USE_MPI
 	! Broadcast these matrices to all processes.
 	if (Node == 0) then
 		write (*,*) 'TotalNodes', TotalNodes
@@ -225,6 +234,7 @@ program Energy
 
 	call MPI_BCAST(PhiPhi,  NumTerms*NumTerms*4, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, MpiError)
 	call MPI_BCAST(PhiHPhi, NumTerms*NumTerms*4, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, MpiError)
+#endif
 	! Allocate space to collate the lowest energies from each node.
 	if (Node == 0) then
 		write (*,*) "Finished broadcasting matrices to all nodes."
@@ -277,11 +287,13 @@ program Energy
 		write (*,*)
 	endif
 
+#ifdef USE_MPI
 	! Synchronize NumUsed, etc. with all processes (only valid for root process at this point).
 	call MPI_BCAST(NumUsed, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
 	call MPI_BCAST(UsedTerms, NumTerms, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
 	call MPI_BCAST(UnusedTerms, NumTerms, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
 	call MPI_BCAST(IsTermUsed, NumTerms, MPI_LOGICAL, 0, MPI_COMM_WORLD, MpiError)
+#endif
 	NumUnused = NumTerms - NumUsed
 	write (*,*) 'Number of unused terms: ', NumUnused
 
@@ -293,18 +305,22 @@ program Energy
 		! Determine for each process which terms it should investigate.
 		if (Node == 0) then
 			NumTermsNode = NumUnused / real(TotalNodes)
+#ifdef USE_MPI
 			do k = 1, TotalNodes - 1, 1
 				NodeStart = NumTermsNode * k + 1
 				NodeEnd = NumTermsNode * (k+1)
 				call MPI_Send(NodeStart, 1, MPI_INTEGER, k, 1, MPI_COMM_WORLD, MpiError)
 				call MPI_Send(NodeEnd, 1, MPI_INTEGER, k, 2, MPI_COMM_WORLD, MpiError)
 			enddo
+#endif
 			! This is the set of values for the root node to take.
 			NodeStart = 1
 			NodeEnd = NumTermsNode * (Node+1)
+#ifdef USE_MPI
 		else
 			call MPI_Recv(NodeStart, 1, MPI_INTEGER, 0, 1, MPI_COMM_WORLD, MpiStatus, MpiError)
 			call MPI_Recv(NodeEnd, 1, MPI_INTEGER, 0, 2, MPI_COMM_WORLD, MpiStatus, MpiError)
+#endif
 		endif
 
 
@@ -460,10 +476,12 @@ program Energy
 			!write (*,*) 'Node:', Node, ' ', EnergyMin, EnergyMinIndex
 			EnergyMinArray(0) = EnergyMin
 			EnergyMinIndexArray(0) = EnergyMinIndex
+#ifdef USE_MPI
 			do k = 1, TotalNodes - 1, 1
 				call MPI_Recv(EnergyMinArray(k), 1, MPI_REAL8, k, 1, MPI_COMM_WORLD, MpiStatus, MpiError)
 				call MPI_Recv(EnergyMinIndexArray(k), 1, MPI_INTEGER, k, 2, MPI_COMM_WORLD, MpiStatus, MpiError)
 			enddo
+#endif
 
 			EnergyMin = 0.0d0
 			EnergyMinIndex = -1
@@ -478,13 +496,17 @@ program Energy
 		else
 			! Tell the main process what term yields the lowest energy and what that energy is.
 			!write (*,*) 'Node:', Node, ' ', EnergyMin, EnergyMinIndex
+#ifdef USE_MPI
 			call MPI_Send(EnergyMin, 1, MPI_REAL8, 0, 1, MPI_COMM_WORLD, MpiError)
 			call MPI_Send(EnergyMinIndex, 1, MPI_INTEGER, 0, 2, MPI_COMM_WORLD, MpiError)
+#endif			
 		endif
 
+#ifdef USE_MPI
 		! Synchronize the lowest energy with all processes.
 		call MPI_BCAST(EnergyMin, 1, MPI_REAL8, 0, MPI_COMM_WORLD, MpiError)
 		call MPI_BCAST(EnergyMinIndex, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
+#endif
 
 		if (EnergyMinIndex == -1) then
 			exit  ! No more terms have been added, so we are done.  The rest of the terms are omitted, because they are problematic.
@@ -513,11 +535,13 @@ program Energy
 			call flush(energyfile)
 		endif
 
+#ifdef USE_MPI
 		call MPI_BCAST(NumUsed, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
 		call MPI_BCAST(NumUnused, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
 		call MPI_BCAST(UsedTerms, NumTerms, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
 		call MPI_BCAST(UnusedTerms, NumTerms, MPI_INTEGER, 0, MPI_COMM_WORLD, MpiError)
 		call MPI_BCAST(IsTermUsed, NumTerms, MPI_LOGICAL, 0, MPI_COMM_WORLD, MpiError)
+#endif
 	enddo
 
 	if (Node == 0) then
@@ -537,6 +561,7 @@ program Energy
 	!  for the first 10 terms, then add another, recalculate, and so on.  For a reference, see Peter Van Reeth's 2004
 	!  paper (doi:10.1016/j.nimb.2004.03.045).
 	if (Node == 0) then
+		write (*,*)
 		write (*,*) 'Calculating the first 10 eigenvalues'
 		write (energyfile,*)
 		do j = 1, NumUsed, 1
@@ -600,8 +625,10 @@ program Energy
 		close(energyfile)
 	endif
 
+#ifdef USE_MPI
 	! Finally shut down MPI.
 	call MPI_Finalize(MpiError)
+#endif
 
 stop
 end program
@@ -680,67 +707,102 @@ end
 
 
 ! Reads in the short-range file header
+!@TODO: Put in a proper XML reader. Badly formatted files will fail horribly.
 integer function ReadShortHeader(FileShortRange, Omega, LValue, IsTriplet, Formalism, Ordering, NumShortTerms, Alpha, Beta, Gamma, NumSets)
 	implicit none
-	integer i, FileShortRange, MagicNum, Version, HeaderLen, DataFormat, Omega, NumShortTerms, NumShortTerms1, NumShortTerms2
-	integer LValue, IsTriplet, Formalism, Ordering, Integration, NumSets, VarLen
+	character(len=1000) Line  ! Much bigger than we should ever need (lines are usually less than 100 characters wide)
+	integer FileShortRange, Omega, NumShortTerms, LValue, IsTriplet, Formalism, Ordering, NumSets
 	real*8, dimension(5) :: Alpha, Beta, Gamma
+	integer i, StrStart, StrEnd
 
-	read (FileShortRange) MagicNum, Version, HeaderLen, DataFormat
-	read (FileShortRange) Omega, NumShortTerms1, NumShortTerms2, LValue, Formalism, IsTriplet, Ordering, Integration, NumSets
+	! Default values to determine later whether these were found in the header	
+	Alpha = 0;  Beta = 0;  Gamma = 0
+	Omega = -1;  LValue = -1;  IsTriplet = -1;  
+	
+	do i = 1, 100, 1  !@TODO: Do not hardcode like this
+		read(FileShortRange, '(a)') Line
+		StrStart = index(Line, "</header>")
+		if (StrStart > 0) then
+			write (*,*) "Finished processing header"
+			exit
+		end if
 
-	!@TODO: More descriptive errors for each
+		! Find L
+		StrStart = index(Line, "<lvalue>")
+		if (StrStart > 0) then
+			StrStart = index(Line, ">") + 1
+			StrEnd = index(Line, "</lvalue>")
+			read (Line(StrStart:StrEnd-1),*) LValue
+		end if
+		! Find omega
+		StrStart = index(Line, "<omega>")
+		if (StrStart > 0) then
+			StrStart = index(Line, ">") + 1
+			StrEnd = index(Line, "</omega>")
+			read (Line(StrStart:StrEnd-1),*) Omega
+		end if
+		! Find number of terms
+		StrStart = index(Line, "<numterms>")
+		if (StrStart > 0) then
+			StrStart = index(Line, ">") + 1
+			StrEnd = index(Line, "</numterms>")
+			read (Line(StrStart:StrEnd-1),*) NumShortTerms
+		end if
 
-	if (MagicNum /= z'31487350') then  ! "PsH1" in hexadecimal (with reverse due to endianness)
-		write (*,*) "This is not a valid Ps-H file...exiting."
-		ReadShortHeader = -1
-		return
-	end if
-
-	if (Version < 1 .or. Version > 8) then
-		write (*,*) "This is not a valid Ps-H file...exiting."
-		ReadShortHeader = -1
-		return
-	end if
-
-	if (HeaderLen /= 80 .and. HeaderLen /= 104) then
-		write (*,*) "This is not a valid Ps-H file (HeaderLen)...exiting."
-		ReadShortHeader = -1
-		return
-	end if
-
-	if (DataFormat /= 8) then
-		write (*,*) "This is not a valid Ps-H file (DataFormat)...exiting."
-		ReadShortHeader = -1
-		return
-	end if
-
-	if ((Formalism /= 1 .and. Formalism /= 2) .or. (IsTriplet /= 0 .and. IsTriplet /= 1) .or. (Ordering /= 0 .and. Ordering /= 1)) then
-		write (*,*) "This is not a valid Ps-H file (Formalism/IsTriplet/Ordering)...exiting."
-		ReadShortHeader = -1
-		return
-	end if
-
-	write (*,*) "Number of sets:", NumSets
-	if (NumSets /= 1 .and. NumSets /= 2 .and. NumSets /= 5) then
-		write (*,*) "This is not a valid Ps-H file (NumSets)...exiting."
-		ReadShortHeader = -1
-		return
-	end if
-
-!	if (NumShortTerms1 /= NumShortTerms2) then
-!		write (*,*) "This is not a valid Ps-H file...exiting."  ! Cannot handle two different values for this yet.
-!		ReadShortHeader = -1
-!		return
-!	end if
-	NumShortTerms = NumShortTerms1
-
-	do i = 1, NumSets, 1
-		read (FileShortRange) Alpha(i), Beta(i), Gamma(i)
+		! Find number of sets of nonlinear parameters
+		StrStart = index(Line, "<numsets>")
+		if (StrStart > 0) then
+			StrStart = index(Line, ">") + 1
+			StrEnd = index(Line, "</numsets>")
+			read (Line(StrStart:StrEnd-1),*) NumSets
+		end if
+		! Find alpha
+		StrStart = index(Line, "<alpha>")
+		if (StrStart > 0) then
+			StrStart = index(Line, ">") + 1
+			StrEnd = index(Line, "</alpha>")
+			read (Line(StrStart:StrEnd-1),*) Alpha(1)  ! Convert from string to double
+		end if
+		! Find beta
+		StrStart = index(Line, "<beta>")
+		if (StrStart > 0) then
+			StrStart = index(Line, ">") + 1
+			StrEnd = index(Line, "</beta>")
+			read (Line(StrStart:StrEnd-1),*) Beta(1)
+		end if
+		! Find gamma
+		StrStart = index(Line, "<gamma>")
+		if (StrStart > 0) then
+			StrStart = index(Line, ">") + 1
+			StrEnd = index(Line, "</gamma>")
+			read (Line(StrStart:StrEnd-1),*) Gamma(1)
+		end if
+		
+		! Find spin
+		StrStart = index(Line, "<spin>")
+		if (StrStart > 0) then
+			if (index(Line, "Singlet") > 0) then
+				IsTriplet = 0
+			else if (index(Line, "Triplet") > 0) then
+				IsTriplet = 1
+			else
+				write (*,*) "Spin could not be determined!"
+				stop
+			end if
+		end if
 	end do
 	
-	read (FileShortRange) VarLen
-
+	! Find start of data section
+	do i = 1, 100, 1  !@TODO: Do not hardcode like this
+		read(FileShortRange, '(a)') Line
+		StrStart = index(Line, "<data>")
+		if (StrStart > 0) then
+			write (*,*) "Found data section"
+			exit
+		end if
+	end do
+	
+	!@TODO: Check whether all values were found
 	ReadShortHeader = 0
 	return
 end

@@ -4,8 +4,8 @@
 		<Platform Name="Win32"/></Platforms>
 	<Configurations>
 		<Configuration Name="Debug|Win32">
-				<Tool Name="VFFortranCompilerTool" SuppressStartupBanner="true" DebugInformationFormat="debugEnabled" Optimization="optimizeDisabled" AdditionalIncludeDirectories="C:\Program Files (x86)\Intel\MPI\4.0.3.009\ia32\include" OpenMPConditionalCompilation="false" OpenMP="OpenMPParallelCode" WarnInterfaces="true" Traceback="true" BoundsCheck="true" RuntimeLibrary="rtMultiThreadedDebug" UseMkl="mklParallel" Interfaces="true"/>
-				<Tool Name="VFLinkerTool" LinkIncremental="linkIncrementalNo" SuppressStartupBanner="true" AdditionalLibraryDirectories="C:\Program Files (x86)\Intel\MPI\4.0.3.009\ia32\lib" GenerateDebugInformation="true" SubSystem="subSystemConsole" StackReserveSize="10000000" AdditionalDependencies="impi.lib mkl_lapack95.lib mkl_intel_c.lib mkl_intel_thread.lib mkl_core.lib libiomp5md.lib"/>
+				<Tool Name="VFFortranCompilerTool" SuppressStartupBanner="true" DebugInformationFormat="debugEnabled" Optimization="optimizeDisabled" Preprocess="preprocessYes" AdditionalIncludeDirectories="C:\Program Files (x86)\Intel\MPI\4.0.3.009\ia32\include" PreprocessorDefinitions="NO_MPI" OpenMPConditionalCompilation="false" OpenMP="OpenMPParallelCode" WarnInterfaces="true" Traceback="true" BoundsCheck="true" RuntimeLibrary="rtMultiThreadedDebug" UseMkl="mklParallel" Interfaces="true"/>
+				<Tool Name="VFLinkerTool" LinkIncremental="linkIncrementalNo" SuppressStartupBanner="true" AdditionalLibraryDirectories="C:\Program Files (x86)\Intel\MPI\4.0.3.009\ia32\lib" GenerateDebugInformation="true" SubSystem="subSystemConsole" StackReserveSize="10000000" AdditionalDependencies="mkl_lapack95.lib mkl_intel_c.lib mkl_intel_thread.lib mkl_core.lib libiomp5md.lib"/>
 				<Tool Name="VFResourceCompilerTool"/>
 				<Tool Name="VFMidlTool" SuppressStartupBanner="true"/>
 				<Tool Name="VFCustomBuildTool"/>

@@ -1,4 +1,4 @@
-FC = mpif90 -f90=ifort
+FC = mpif90 #-f90=ifort
 #FC = gfortran
 #FC = ifort
 #FFLAGS = -r8
@@ -6,7 +6,7 @@ FC = mpif90 -f90=ifort
 #FFLAGS = -fopenmp -O2
 #FFLAGS = -openmp -parallel -O3 -xHost
 #FFLAGS = -openmp -xHost -heap-arrays -g
-FFLAGS = -openmp -xHost -g
+FFLAGS = -openmp -xHost -g -fpp
 #LDLIBS = -lmkl_intel_thread -lmkl_lapack95 -lmkl_core -lmkl_sequential -lmkl_blacs -lmkl_blas95 -lmkl_lapack
 #LDLIBS = -lmkl_core -lmkl_lapack95 -lmkl_sequential -lm -lmkl_intel -lmkl_intel_thread -lmkl_blas95
 #LDLIBS = -llapack -lmkl_intel_thread -lmkl_core -lmkl_sequential
